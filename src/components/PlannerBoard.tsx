@@ -52,6 +52,8 @@ export function PlannerBoard(props: Props) {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [viewOpen, setViewOpen] = useState(false);
   const viewRef = useRef<HTMLDivElement>(null);
+  const calCardRef = useRef<HTMLDivElement>(null);
+  const scrollCooldown = useRef(false);
 
   const anchor = new Date(anchorISO);
   const renderStart = new Date(renderStartISO);
@@ -87,6 +89,21 @@ export function PlannerBoard(props: Props) {
     return () => window.removeEventListener("keydown", h);
   }, [focus, selected]);
   useEffect(() => () => document.documentElement.classList.remove("planner-focus"), []);
+
+  // Scroll to navigate month / year (not day/week — those scroll through time)
+  useEffect(() => {
+    if (view !== "month" && view !== "year") return;
+    const el = calCardRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (scrollCooldown.current) return;
+      scrollCooldown.current = true;
+      setTimeout(() => { scrollCooldown.current = false; }, 500);
+      router.push(href(view, e.deltaY > 0 ? nextDate : prevDate));
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [view, prevDate, nextDate, router]);
 
   function commitPlan(id: string|null, day: Date) {
     setDragId(null); setDropTarget(null);
@@ -152,7 +169,7 @@ export function PlannerBoard(props: Props) {
 
       <div className="flex min-h-0 flex-1 gap-4">
         {/* Main calendar */}
-        <div className="card flex min-w-0 flex-1 flex-col overflow-hidden p-0">
+        <div ref={calCardRef} className="card flex min-w-0 flex-1 flex-col overflow-hidden p-0">
           {view==="year" ? (
             <YearView anchor={anchor} today={today} planned={planned} href={href}/>
           ) : view==="month" ? (

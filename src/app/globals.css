@@ -183,7 +183,8 @@ body {
   }
   .input::placeholder { color: var(--faint); }
   .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
-  select.input { cursor: pointer; }
+  select.input { cursor: pointer; background-color: var(--surface); color: var(--ink); }
+  select.input option { background-color: var(--surface); color: var(--ink); }
 
   .label {
     @apply mb-1 block text-xs font-medium;
