@@ -1,0 +1,234 @@
+// Atlas OS — data model for the outcome spine.
+// SQLite for local dev; switch the provider + DATABASE_URL to Postgres for prod.
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// An account. Everything a person owns is scoped to their User.
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  goals        Goal[]
+  projects     Project[]
+  tasks        Task[]
+  events       Event[]
+  reviews      Review[]
+  members      Member[]
+  teams        Team[]
+  domains      Domain[]
+  attachments  Attachment[]
+  profile      Profile?
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String   @default("#6366f1")
+  order     Int      @default(0)
+  members   Member[]
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// A file (document or image) attached to a task. Bytes live on disk under
+// .uploads/<userId>/<id>; this row holds the metadata.
+model Attachment {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  filename  String
+  mimeType  String
+  size      Int
+  path      String
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+}
+
+// A workspace member — an assignable person. No separate login (yet); these are
+// records the account owner manages, powering "group by responsible".
+model Member {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String   @default("#3b82f6")
+  isSelf    Boolean  @default(false)
+  order     Int      @default(0)
+  teamId    String?
+  team      Team?    @relation(fields: [teamId], references: [id])
+  tasks     Task[]   @relation("Responsible")
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// A life domain (Career, Health, Finance, ...). Shared taxonomy across all users.
+model Domain {
+  id       String    @id @default(cuid())
+  userId   String
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key      String
+  name     String
+  color    String
+  order    Int       @default(0)
+  goals    Goal[]
+  projects Project[]
+  tasks    Task[]
+  events   Event[]
+
+  @@unique([userId, key])
+  @@index([userId])
+}
+
+// A measurable outcome at some planning horizon. Goals can ladder up to a parent
+// goal (quarterly -> annual -> 3yr -> ... -> vision).
+model Goal {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  horizon      String    @default("annual") // see HORIZONS in src/lib/horizons.ts
+  importance   Int       @default(3) // 1-5 strategic importance
+  metric       String? // what we measure, e.g. "Books read"
+  unit         String?
+  targetValue  Float?
+  currentValue Float     @default(0)
+  startValue   Float     @default(0)
+  targetDate   DateTime?
+  status       String    @default("active") // active | achieved | dropped
+  domainId     String?
+  domain       Domain?   @relation(fields: [domainId], references: [id])
+  parentId     String?
+  parent       Goal?     @relation("GoalLadder", fields: [parentId], references: [id])
+  children     Goal[]    @relation("GoalLadder")
+  projects     Project[]
+  tasks        Task[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+// A project is a finite outcome with success criteria.
+model Project {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String
+  objective       String?
+  successCriteria String?
+  status          String    @default("active") // active | on_hold | done | archived
+  targetDate      DateTime?
+  domainId        String?
+  domain          Domain?   @relation(fields: [domainId], references: [id])
+  goalId          String?
+  goal            Goal?     @relation(fields: [goalId], references: [id])
+  tasks           Task[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+// The atomic unit of execution.
+model Task {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?
+  status         String    @default("new") // new | scheduled | in_progress | completed
+  type           String    @default("operational") // see TYPES in src/lib/status.ts
+  // Priority inputs (the decision engine reads these).
+  impact         Int       @default(3) // 1-5
+  urgency        Int       @default(3) // 1-5 baseline (due date amplifies)
+  effortHours    Float     @default(1)
+  energy         String    @default("medium") // low | medium | high
+  energyType     String    @default("mental") // physical | mental | emotional | creative
+  // Scheduling / execution.
+  startDate      DateTime?
+  dueDate        DateTime?
+  // Time planner: plannedDate = the day a task sits on the planner (null = waiting list).
+  // scheduledStart/End = an optional specific time block within that day.
+  plannedDate    DateTime?
+  scheduledStart DateTime?
+  scheduledEnd   DateTime?
+  progress       Int       @default(0) // 0-100
+  actualHours    Float?
+  completedAt    DateTime?
+  // Strategic links.
+  domainId       String?
+  domain         Domain?   @relation(fields: [domainId], references: [id])
+  projectId      String?
+  project        Project?  @relation(fields: [projectId], references: [id])
+  goalId         String?
+  goal           Goal?     @relation(fields: [goalId], references: [id])
+  responsibleId  String?
+  responsible    Member?   @relation("Responsible", fields: [responsibleId], references: [id])
+  attachments    Attachment[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+// Per-user capacity settings.
+model Profile {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                String   @default("You")
+  deepWorkHoursPerDay Float    @default(4)
+  totalHoursPerDay    Float    @default(8)
+  workdays            String   @default("1,2,3,4,5") // ISO weekday numbers, Mon=1
+  updatedAt           DateTime @updatedAt
+}
+
+// A calendar block that is NOT a task — meetings, focus time, personal blocks.
+// Tasks schedule themselves via Task.scheduledStart/End; Events cover everything else.
+model Event {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  kind      String   @default("focus") // meeting | focus | personal
+  start     DateTime
+  end       DateTime
+  domainId  String?
+  domain    Domain?  @relation(fields: [domainId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// Review loop records (daily / weekly).
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // daily | weekly
+  energy    Int? // 1-5 self report
+  wins      String?
+  blockers  String?
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
