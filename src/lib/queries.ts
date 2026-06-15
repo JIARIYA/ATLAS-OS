@@ -213,6 +213,7 @@ export interface PlannerTask {
   dueDate: string | null;
   domainName: string | null;
   domainColor: string | null;
+  color: string | null;
   projectTitle: string | null;
   projectId: string | null;
   responsibleId: string | null;
@@ -236,6 +237,7 @@ function toPlannerTask(t: {
   goalId: string | null;
   projectId: string | null;
   responsibleId: string | null;
+  color?: string | null;
   domain?: { name: string; color: string } | null;
   project?: { title: string; goalId?: string | null } | null;
 }): PlannerTask {
@@ -263,6 +265,7 @@ function toPlannerTask(t: {
     dueDate: t.dueDate ? t.dueDate.toISOString() : null,
     domainName: t.domain?.name ?? null,
     domainColor: t.domain?.color ?? null,
+    color: t.color ?? null,
     projectTitle: t.project?.title ?? null,
     projectId: t.projectId,
     responsibleId: t.responsibleId,

@@ -83,6 +83,29 @@ export async function quickAddTask(formData: FormData) {
   revalidateAll();
 }
 
+export async function plannerQuickCreate(
+  title: string,
+  plannedDateISO: string,
+  scheduledStartISO?: string,
+  scheduledEndISO?: string,
+  color?: string,
+) {
+  const userId = await getCurrentUserId();
+  if (!title.trim()) return;
+  await prisma.task.create({
+    data: {
+      userId,
+      title: title.trim().slice(0, 200),
+      plannedDate: new Date(plannedDateISO),
+      scheduledStart: scheduledStartISO ? new Date(scheduledStartISO) : undefined,
+      scheduledEnd: scheduledEndISO ? new Date(scheduledEndISO) : undefined,
+      status: scheduledStartISO ? "scheduled" : "new",
+      color: color ?? undefined,
+    },
+  });
+  revalidateAll();
+}
+
 export async function setTaskStatus(id: string, status: string) {
   const userId = await getCurrentUserId();
   const s = z.enum(["new", "scheduled", "in_progress", "completed"]).catch("new").parse(status);

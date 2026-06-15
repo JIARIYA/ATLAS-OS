@@ -47,11 +47,10 @@ export function addDays(d: Date, n: number): Date {
   return x;
 }
 
-// Monday 00:00 of the week containing `d`.
+// Sunday 00:00 of the week containing `d` (matches Sun-first calendar grid).
 export function startOfWeek(d: Date = new Date()): Date {
-  const wd = isoWeekday(d); // Mon=1..Sun=7
   const x = startOfDay(d);
-  x.setDate(x.getDate() - (wd - 1));
+  x.setDate(x.getDate() - x.getDay()); // getDay(): 0=Sun … 6=Sat
   return x;
 }
 

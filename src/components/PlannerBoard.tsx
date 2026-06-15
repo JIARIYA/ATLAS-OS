@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2 } from "lucide-react";
-import { planTask, unplanTask } from "@/app/actions";
+import { planTask, plannerQuickCreate, unplanTask } from "@/app/actions";
 import { addDays, addMonths, startOfWeek, ymd } from "@/lib/dates";
 import { STATUS_META, TYPE_META, type Status, type TaskType } from "@/lib/status";
 import type { PlannerTask } from "@/lib/queries";
@@ -14,6 +14,17 @@ import { useToast } from "./ui/toast";
 import type { CalView } from "@/app/(app)/calendar/page";
 
 interface Member { id: string; name: string; color: string }
+
+interface QuickCreate {
+  plannedDate: Date;
+  scheduledStart?: Date;
+  scheduledEnd?: Date;
+  x: number;
+  y: number;
+}
+
+const COLOR_SWATCHES = ["#3b82f6","#8b5cf6","#ef4444","#f97316","#eab308","#22c55e","#14b8a6","#ec4899","#64748b"];
+function taskColor(t: PlannerTask) { return t.color ?? t.domainColor ?? STATUS_META[t.status as Status]?.color ?? "#888"; }
 
 interface Props {
   view: CalView;
@@ -51,6 +62,8 @@ export function PlannerBoard(props: Props) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [viewOpen, setViewOpen] = useState(false);
+  const [qc, setQc] = useState<QuickCreate | null>(null);
+  const [highlightDate, setHighlightDate] = useState<string | null>(null);
   const viewRef = useRef<HTMLDivElement>(null);
   const calCardRef = useRef<HTMLDivElement>(null);
   const scrollCooldown = useRef(false);
@@ -110,6 +123,23 @@ export function PlannerBoard(props: Props) {
     if (!id) return;
     startT(async () => { await planTask(id, day.toISOString(), undefined); toast.success("Scheduled"); router.refresh(); });
   }
+  function saveQuickCreate(title: string, scheduledStart?: Date, scheduledEnd?: Date, color?: string) {
+    if (!qc || !title.trim()) { setQc(null); setHighlightDate(null); return; }
+    const q = qc;
+    setQc(null); setHighlightDate(null);
+    startT(async () => {
+      await plannerQuickCreate(
+        title,
+        q.plannedDate.toISOString(),
+        scheduledStart?.toISOString(),
+        scheduledEnd?.toISOString(),
+        color,
+      );
+      toast.success("Task added");
+      router.refresh();
+    });
+  }
+
   function onDropWaiting() {
     const id = dragId; setDragId(null); setDropTarget(null);
     if (!id) return;
@@ -183,6 +213,8 @@ export function PlannerBoard(props: Props) {
               setDragId={setDragId}
               dropTarget={dropTarget}
               setDropTarget={setDropTarget}
+              onClickDay={(d,x,y) => { setHighlightDate(ymdDate(d)); setQc({plannedDate:d,x,y}); }}
+              highlightDate={highlightDate}
             />
           ) : (
             <TimeGrid
@@ -196,6 +228,7 @@ export function PlannerBoard(props: Props) {
               dropTarget={dropTarget}
               setDropTarget={setDropTarget}
               onDropCell={commitPlan}
+              onClickSlot={(d,start,end,x,y) => { setHighlightDate(ymdDate(d)); setQc({plannedDate:d,scheduledStart:start,scheduledEnd:end,x,y}); }}
             />
           )}
         </div>
@@ -229,12 +262,13 @@ export function PlannerBoard(props: Props) {
       </div>
 
       <TaskDetailPanel task={selected} options={options} onClose={()=>setSelected(null)}/>
+      {qc && <QuickCreatePopup qc={qc} onSave={saveQuickCreate} onClose={()=>{ setQc(null); setHighlightDate(null); }}/>}
     </div>
   );
 }
 
 /* ── Time Grid (day / week) ─────────────────────────────── */
-function TimeGrid({ view, dayList, today, planned, onSelect, setDragId, dragId, dropTarget, setDropTarget, onDropCell }: {
+function TimeGrid({ view, dayList, today, planned, onSelect, setDragId, dragId, dropTarget, setDropTarget, onDropCell, onClickSlot }: {
   view: "day"|"week";
   dayList: Date[];
   today: Date;
@@ -245,6 +279,7 @@ function TimeGrid({ view, dayList, today, planned, onSelect, setDragId, dragId, 
   dropTarget: string|null;
   setDropTarget: (v:string|null|((p:string|null)=>string|null))=>void;
   onDropCell: (id:string|null, day:Date)=>void;
+  onClickSlot: (day:Date, start:Date, end:Date, x:number, y:number)=>void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [nowMinutes, setNowMinutes] = useState(() => { const n=new Date(); return n.getHours()*60+n.getMinutes(); });
@@ -295,7 +330,7 @@ function TimeGrid({ view, dayList, today, planned, onSelect, setDragId, dragId, 
           {dayList.map(d => (
             <div key={d.toISOString()} className="flex flex-1 flex-wrap gap-0.5 p-1 border-l border-border">
               {allDayFor(d).map(t => {
-                const color = t.domainColor ?? STATUS_META[t.status as Status]?.color ?? "#888";
+                const color = taskColor(t);
                 return (
                   <button key={t.id} onClick={()=>onSelect(t)}
                     className="truncate rounded px-1.5 py-0.5 text-[10px] font-medium text-white transition-opacity hover:opacity-80"
@@ -331,6 +366,16 @@ function TimeGrid({ view, dayList, today, planned, onSelect, setDragId, dragId, 
                 onDragOver={e=>{e.preventDefault();setDropTarget(key);}}
                 onDragLeave={()=>setDropTarget(t=>t===key?null:t)}
                 onDrop={()=>onDropCell(dragId,d)}
+                onClick={e=>{
+                  if ((e.target as HTMLElement).closest("button")) return;
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  const relY = e.clientY - rect.top;
+                  const hour = Math.floor(relY / HOUR_H);
+                  const mins = Math.round(((relY % HOUR_H) / HOUR_H) * 60 / 15) * 15;
+                  const start = new Date(d); start.setHours(hour, mins, 0, 0);
+                  const end = new Date(start); end.setHours(start.getHours()+1);
+                  onClickSlot(d, start, end, e.clientX, e.clientY);
+                }}
                 style={{background: dropTarget===key?"color-mix(in srgb, var(--accent) 6%, transparent)":undefined}}>
                 {/* Hour lines */}
                 {hours.map(h=>(
@@ -354,7 +399,7 @@ function TimeGrid({ view, dayList, today, planned, onSelect, setDragId, dragId, 
                   const top = (s.getHours()*60+s.getMinutes())/60*HOUR_H;
                   const dur = (e.getTime()-s.getTime())/3600000;
                   const height = Math.max(20, dur*HOUR_H);
-                  const color = t.domainColor ?? STATUS_META[t.status as Status]?.color ?? "#888";
+                  const color = taskColor(t);
                   const done = t.status==="completed";
                   return (
                     <button key={t.id} onClick={()=>onSelect(t)} draggable
@@ -376,7 +421,7 @@ function TimeGrid({ view, dayList, today, planned, onSelect, setDragId, dragId, 
 }
 
 /* ── Month Grid ─────────────────────────────────────────── */
-function MonthGrid({ cells, anchorMonth, today, tasksFor, onSelect, onDropDay, setDragId, dropTarget, setDropTarget }: {
+function MonthGrid({ cells, anchorMonth, today, tasksFor, onSelect, onDropDay, setDragId, dropTarget, setDropTarget, onClickDay, highlightDate }: {
   cells: Date[]; anchorMonth: number; today: Date;
   tasksFor: (d:Date)=>PlannerTask[];
   onSelect: (t:PlannerTask)=>void;
@@ -384,6 +429,8 @@ function MonthGrid({ cells, anchorMonth, today, tasksFor, onSelect, onDropDay, s
   setDragId: (id:string)=>void;
   dropTarget: string|null;
   setDropTarget: (v:string|null|((p:string|null)=>string|null))=>void;
+  onClickDay: (d:Date, x:number, y:number)=>void;
+  highlightDate: string|null;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -396,13 +443,16 @@ function MonthGrid({ cells, anchorMonth, today, tasksFor, onSelect, onDropDay, s
           const isToday = d.getTime()===today.getTime();
           const dayTasks = tasksFor(d);
           const key = d.toISOString();
+          const dKey = ymdDate(d);
+          const isHighlighted = highlightDate === dKey;
           return (
             <div key={key}
               onDragOver={e=>{e.preventDefault();setDropTarget(key);}}
               onDragLeave={()=>setDropTarget(t=>t===key?null:t)}
               onDrop={()=>onDropDay(d)}
-              className="min-h-0 overflow-hidden border-b border-r border-border p-1 transition-colors"
-              style={{background: dropTarget===key?"color-mix(in srgb, var(--accent) 8%, transparent)":inMonth?"var(--surface)":"var(--surface2)"}}>
+              onClick={e=>{ if((e.target as HTMLElement).closest("button")) return; onClickDay(d,e.clientX,e.clientY); }}
+              className="min-h-0 cursor-pointer overflow-hidden border-b border-r border-border p-1 transition-colors"
+              style={{background: isHighlighted?"color-mix(in srgb, var(--accent) 12%, var(--surface))":dropTarget===key?"color-mix(in srgb, var(--accent) 8%, transparent)":inMonth?"var(--surface)":"var(--surface2)", outline:isHighlighted?"2px solid var(--accent)":"none", outlineOffset:"-2px"}}>
               <div className="mb-1 flex justify-end">
                 <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-medium"
                   style={{background:isToday?"var(--accent)":"transparent",color:isToday?"#fff":inMonth?"var(--ink)":"var(--faint)"}}>
@@ -411,7 +461,7 @@ function MonthGrid({ cells, anchorMonth, today, tasksFor, onSelect, onDropDay, s
               </div>
               <div className="space-y-0.5">
                 {dayTasks.slice(0,3).map(t=>{
-                  const color = t.domainColor ?? STATUS_META[t.status as Status]?.color ?? "#888";
+                  const color = taskColor(t);
                   return (
                     <button key={t.id} onClick={()=>onSelect(t)} draggable
                       onDragStart={e=>{e.dataTransfer.setData("text/plain",t.id);setDragId(t.id);}}
@@ -481,6 +531,130 @@ function YearView({ anchor, today, planned, href }: {
         })}
       </div>
     </div>
+  );
+}
+
+/* ── Quick-create popup ─────────────────────────────────── */
+const DURATION_OPTS = [
+  {label:"15 min", mins:15},
+  {label:"30 min", mins:30},
+  {label:"1 hour", mins:60},
+  {label:"2 hours",mins:120},
+  {label:"3 hours",mins:180},
+];
+
+function QuickCreatePopup({ qc, onSave, onClose }: { qc: QuickCreate; onSave: (title:string, scheduledStart?:Date, scheduledEnd?:Date, color?:string)=>void; onClose:()=>void }) {
+  const [title, setTitle] = useState("");
+  const [timeVal, setTimeVal] = useState(() => {
+    if (qc.scheduledStart) {
+      const h = String(qc.scheduledStart.getHours()).padStart(2,"0");
+      const m = String(qc.scheduledStart.getMinutes()).padStart(2,"0");
+      return `${h}:${m}`;
+    }
+    return "";
+  });
+  const [durMins, setDurMins] = useState(60);
+  const [color, setColor] = useState(COLOR_SWATCHES[0]);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key==="Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  function submit() {
+    if (!title.trim()) return;
+    let start: Date|undefined, end: Date|undefined;
+    if (timeVal) {
+      const [h, m] = timeVal.split(":").map(Number);
+      start = new Date(qc.plannedDate);
+      start.setHours(h, m, 0, 0);
+      end = new Date(start);
+      end.setMinutes(end.getMinutes() + durMins);
+    }
+    onSave(title.trim(), start, end, color);
+  }
+
+  const dateLabel = qc.plannedDate.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+
+  const PW = 300, PH = 280;
+  const left = Math.min(qc.x, (typeof window !== "undefined" ? window.innerWidth : 800) - PW - 12);
+  const top  = Math.min(qc.y, (typeof window !== "undefined" ? window.innerHeight : 600) - PH - 12);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose}/>
+      <div className="fixed z-50 rounded-xl shadow-2xl overflow-hidden"
+        style={{left, top, width:PW, border:"1px solid rgba(147,197,253,0.35)", background:"rgba(219,234,254,0.97)"}}>
+        {/* Header */}
+        <div className="px-4 py-2.5" style={{background:"rgba(191,219,254,0.7)", borderBottom:"1px solid rgba(147,197,253,0.4)"}}>
+          <div className="text-xs font-semibold" style={{color:"#1d4ed8"}}>{dateLabel}</div>
+        </div>
+        <div className="p-3 space-y-2.5">
+          {/* Title */}
+          <input
+            ref={inputRef}
+            value={title}
+            onChange={e=>setTitle(e.target.value)}
+            onKeyDown={e=>{ if(e.key==="Enter") submit(); }}
+            placeholder="Task name"
+            className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
+            style={{background:"rgba(255,255,255,0.7)", border:"1px solid rgba(147,197,253,0.6)", color:"#1e3a5f"}}
+          />
+          {/* Time + Duration row */}
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide" style={{color:"#3b82f6"}}>Time</div>
+              <input
+                type="time"
+                value={timeVal}
+                onChange={e=>setTimeVal(e.target.value)}
+                className="w-full rounded-lg px-2 py-1.5 text-sm focus:outline-none"
+                style={{background:"rgba(255,255,255,0.7)", border:"1px solid rgba(147,197,253,0.6)", color:"#1e3a5f"}}
+              />
+            </div>
+            <div className="flex-1">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide" style={{color:"#3b82f6"}}>Duration</div>
+              <select
+                value={durMins}
+                onChange={e=>setDurMins(Number(e.target.value))}
+                className="w-full rounded-lg px-2 py-1.5 text-sm focus:outline-none cursor-pointer"
+                style={{background:"rgba(255,255,255,0.7)", border:"1px solid rgba(147,197,253,0.6)", color:"#1e3a5f"}}
+              >
+                {DURATION_OPTS.map(o=><option key={o.mins} value={o.mins}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+          {/* Color swatches */}
+          <div>
+            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide" style={{color:"#3b82f6"}}>Color</div>
+            <div className="flex gap-1.5 flex-wrap">
+              {COLOR_SWATCHES.map(c=>(
+                <button key={c} onClick={()=>setColor(c)}
+                  className="h-5 w-5 rounded-full transition-transform hover:scale-110"
+                  style={{background:c, outline: color===c?"2px solid #1d4ed8":"2px solid transparent", outlineOffset:"2px"}}
+                />
+              ))}
+            </div>
+          </div>
+          {/* Actions */}
+          <div className="flex justify-end gap-2 pt-0.5">
+            <button onClick={onClose}
+              className="rounded-lg px-3 py-1.5 text-sm transition-colors hover:bg-blue-100"
+              style={{color:"#3b82f6"}}>
+              Cancel
+            </button>
+            <button onClick={submit} disabled={!title.trim()}
+              className="rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
+              style={{background:"#3b82f6"}}>
+              Add
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
