@@ -66,6 +66,7 @@ function ProjectCard({ p, members, onSelect }: { p: Project; members: Member[]; 
       {open && (
         <div className="mt-3 space-y-3 border-t pt-3">
           <textarea defaultValue={p.objective ?? ""} placeholder="Objective…" rows={2} onBlur={(e) => { if ((e.target.value ?? "") !== (p.objective ?? "")) run(async () => { await updateProjectDetails(p.id, { objective: e.target.value }); }); }} className="input text-sm" />
+          <textarea defaultValue={(p as { notes?: string | null }).notes ?? ""} placeholder="Notes / context…" rows={2} onBlur={(e) => { run(async () => { await updateProjectDetails(p.id, { notes: e.target.value }); }); }} className="input text-sm" />
           {groups.map((g) => {
             const gt = p.tasks.filter((t) => (g.id === null ? !t.responsibleId : t.responsibleId === g.id));
             if (gt.length === 0) return null;

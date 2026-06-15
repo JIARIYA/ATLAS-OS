@@ -14,12 +14,13 @@ import {
   Scale,
   Search,
   Sparkles,
-  Target,
   Users,
   FolderKanban,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { logout } from "@/app/auth-actions";
+import { useSidebar } from "@/context/SidebarContext";
 import { SearchDialog } from "./SearchDialog";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -71,6 +72,7 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const [searchOpen, setSearchOpen] = useState(false);
+  const { open: mobileOpen, close: closeMobile } = useSidebar();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -81,10 +83,20 @@ export function Sidebar({
   }, []);
 
   return (
+    <>
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={closeMobile} />
+      )}
     <aside
       data-app-sidebar
-      className="atlas-nav sticky top-0 z-30 flex h-screen w-[72px] shrink-0 flex-col px-2.5 py-3 md:w-[244px] md:px-3"
+      className={`atlas-nav fixed top-0 left-0 z-40 flex h-screen w-[244px] shrink-0 flex-col px-2.5 py-3 transition-transform md:sticky md:translate-x-0 md:w-[244px] md:px-3 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
     >
+      {/* Mobile close button */}
+      <button onClick={closeMobile} className="absolute right-3 top-3 rounded-md p-1.5 text-white/60 hover:text-white md:hidden">
+        <X size={18} />
+      </button>
+
       {/* Workspace header */}
       <div className="mb-3 flex items-center gap-2.5 rounded-lg px-1.5 py-1.5">
         <div
@@ -175,5 +187,6 @@ export function Sidebar({
         </div>
       </div>
     </aside>
+    </>
   );
 }

@@ -3,7 +3,8 @@ import { AlertTriangle, ArrowRight, Clock, Flag, Gauge, Sparkles, TrendingUp } f
 import { AddTaskForm } from "@/components/AddTaskForm";
 import { ScoreBadge } from "@/components/TaskCard";
 import { TaskActions } from "@/components/TaskActions";
-import { ActivityTracker, EnergyCard, MilestonesWidget, PeakHours, StreakCard, Widget } from "@/components/HomeWidgets";
+import { ActivityTracker, EnergyCard, MilestonesWidget, PeakHours, WeekHeatmap, Widget } from "@/components/HomeWidgets";
+import { IntentionBanner } from "@/components/IntentionBanner";
 import { Badge } from "@/components/ui";
 import { formatRelativeDue } from "@/lib/dates";
 import { getFormOptions, getHomeData } from "@/lib/queries";
@@ -30,6 +31,9 @@ export default async function DashboardPage() {
 
   return (
     <div className="animate-fade-in space-y-5">
+      {/* Intention banner */}
+      <IntentionBanner initial={home.todayIntention} />
+
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -46,7 +50,7 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-12 gap-4">
         <ActivityTracker items={home.activityToday} total={home.totalTodayHours} />
         <MilestonesWidget items={home.milestones} />
-        <StreakCard streak={home.streak} weekStrip={home.weekStrip} />
+        <WeekHeatmap weekStrip={home.weekStrip} completedThisWeek={home.completedThisWeek} />
         <EnergyCard trend={home.energyTrend} latest={home.latestEnergy} />
         <PeakHours heat={home.heat} heatMax={home.heatMax} hours={home.hours} />
 

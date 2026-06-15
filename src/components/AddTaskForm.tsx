@@ -117,6 +117,22 @@ export function AddTaskForm({ options }: { options: Options }) {
         </div>
       </div>
 
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div>
+          <label className="label">Repeat</label>
+          <select name="recurrence" defaultValue="" className="input">
+            <option value="">—</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+        <div>
+          <label className="label">Repeat until</label>
+          <input name="recurrenceEndDate" type="date" className="input" />
+        </div>
+      </div>
+
       <div className="flex items-center gap-2">
         <button type="submit" className="btn btn-accent" disabled={pending}>
           {pending ? "Saving…" : "Add task"}

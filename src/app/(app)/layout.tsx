@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { logout } from "@/app/auth-actions";
+import { MobileHeader } from "@/components/MobileHeader";
 import { Sidebar } from "@/components/Sidebar";
 import { prisma } from "@/lib/db";
 import { getFormOptions } from "@/lib/queries";
@@ -33,7 +34,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex min-h-screen">
       <Sidebar user={user} members={members} options={{ members, projects: options.projects }} />
       <main data-app-main className="flex-1 overflow-x-hidden">
-        <div className="mx-auto max-w-[1400px] px-6 py-7 md:px-8">{children}</div>
+        <MobileHeader />
+        <div className="mx-auto max-w-[1400px] px-4 py-5 md:px-8 md:py-7">{children}</div>
       </main>
     </div>
   );

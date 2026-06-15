@@ -41,11 +41,21 @@ const clampNum = (v: number | undefined, lo: number, hi: number, dflt: number) =
 const energyEnum = z.enum(["low", "medium", "high"]);
 const energyTypeEnum = z.enum(["physical", "mental", "emotional", "creative"]);
 
+function nextRecurrenceDate(base: Date | null, rec: string): Date {
+  const d = new Date(base ?? new Date());
+  if (rec === "daily") d.setDate(d.getDate() + 1);
+  else if (rec === "weekly") d.setDate(d.getDate() + 7);
+  else if (rec === "monthly") d.setMonth(d.getMonth() + 1);
+  return d;
+}
+
 // ---------- Tasks ----------
 export async function createTask(formData: FormData) {
   const userId = await getCurrentUserId();
   const title = str(formData.get("title"));
   if (!title) return;
+  const recRaw = str(formData.get("recurrence"));
+  const recurrence = recRaw && ["daily", "weekly", "monthly"].includes(recRaw) ? recRaw : undefined;
   await prisma.task.create({
     data: {
       userId,
@@ -63,6 +73,8 @@ export async function createTask(formData: FormData) {
       projectId: str(formData.get("projectId")),
       goalId: str(formData.get("goalId")),
       responsibleId: str(formData.get("responsibleId")),
+      recurrence,
+      recurrenceEndDate: recurrence ? date(formData.get("recurrenceEndDate")) : undefined,
     },
   });
   revalidateAll();
@@ -109,6 +121,14 @@ export async function plannerQuickCreate(
 export async function setTaskStatus(id: string, status: string) {
   const userId = await getCurrentUserId();
   const s = z.enum(["new", "scheduled", "in_progress", "completed"]).catch("new").parse(status);
+
+  const taskBefore = s === "completed"
+    ? await prisma.task.findFirst({
+        where: { id, userId },
+        select: { recurrence: true, recurrenceEndDate: true, dueDate: true, title: true, effortHours: true, energy: true, energyType: true, type: true, impact: true, urgency: true, domainId: true, projectId: true, goalId: true, responsibleId: true },
+      })
+    : null;
+
   await prisma.task.updateMany({
     where: { id, userId },
     data: {
@@ -117,6 +137,33 @@ export async function setTaskStatus(id: string, status: string) {
       completedAt: s === "completed" ? new Date() : null,
     },
   });
+
+  if (taskBefore?.recurrence) {
+    const nextDue = nextRecurrenceDate(taskBefore.dueDate, taskBefore.recurrence);
+    const pastEnd = taskBefore.recurrenceEndDate && nextDue > taskBefore.recurrenceEndDate;
+    if (!pastEnd) {
+      await prisma.task.create({
+        data: {
+          userId,
+          title: taskBefore.title,
+          effortHours: taskBefore.effortHours,
+          energy: taskBefore.energy,
+          energyType: taskBefore.energyType,
+          type: taskBefore.type,
+          impact: taskBefore.impact,
+          urgency: taskBefore.urgency,
+          dueDate: nextDue,
+          domainId: taskBefore.domainId,
+          projectId: taskBefore.projectId,
+          goalId: taskBefore.goalId,
+          responsibleId: taskBefore.responsibleId,
+          recurrence: taskBefore.recurrence,
+          recurrenceEndDate: taskBefore.recurrenceEndDate,
+        },
+      });
+    }
+  }
+
   revalidateAll();
 }
 
@@ -135,6 +182,31 @@ export async function setTaskProgress(id: string, progress: number) {
 }
 
 export async function deleteTask(id: string) {
+  const userId = await getCurrentUserId();
+  await prisma.task.deleteMany({ where: { id, userId } });
+  revalidateAll();
+}
+
+export async function createSubtask(parentId: string, title: string) {
+  const userId = await getCurrentUserId();
+  const t = title.trim();
+  if (!t) return;
+  const parent = await prisma.task.findFirst({ where: { id: parentId, userId }, select: { id: true } });
+  if (!parent) return;
+  await prisma.task.create({ data: { userId, title: t.slice(0, 200), parentTaskId: parentId } });
+  revalidateAll();
+}
+
+export async function toggleSubtask(id: string, done: boolean) {
+  const userId = await getCurrentUserId();
+  await prisma.task.updateMany({
+    where: { id, userId },
+    data: { status: done ? "completed" : "new", completedAt: done ? new Date() : null },
+  });
+  revalidateAll();
+}
+
+export async function deleteSubtask(id: string) {
   const userId = await getCurrentUserId();
   await prisma.task.deleteMany({ where: { id, userId } });
   revalidateAll();
@@ -205,7 +277,7 @@ export async function setProjectStatus(id: string, status: string) {
   revalidateAll();
 }
 
-export async function updateProjectDetails(id: string, data: { title?: string; objective?: string; status?: string; targetDate?: string | null }) {
+export async function updateProjectDetails(id: string, data: { title?: string; objective?: string; status?: string; targetDate?: string | null; notes?: string }) {
   const userId = await getCurrentUserId();
   await prisma.project.updateMany({
     where: { id, userId },
@@ -214,6 +286,7 @@ export async function updateProjectDetails(id: string, data: { title?: string; o
       ...(data.objective !== undefined ? { objective: data.objective.slice(0, 2000) } : {}),
       ...(data.status !== undefined ? { status: z.enum(["active", "on_hold", "done", "archived"]).catch("active").parse(data.status) } : {}),
       ...(data.targetDate !== undefined ? { targetDate: data.targetDate ? new Date(`${data.targetDate}T00:00:00`) : null } : {}),
+      ...(data.notes !== undefined ? { notes: data.notes.slice(0, 5000) } : {}),
     },
   });
   revalidateAll();

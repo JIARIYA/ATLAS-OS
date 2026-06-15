@@ -23,6 +23,7 @@ const taskInclude = {
   domain: { select: { name: true, color: true, key: true } },
   project: { select: { goalId: true, title: true } },
   responsible: { select: { id: true, name: true, color: true } },
+  subtasks: { select: { status: true } },
 } as const;
 
 export async function getMembers() {
@@ -218,6 +219,12 @@ export interface PlannerTask {
   projectId: string | null;
   responsibleId: string | null;
   score: number;
+  trackedSeconds: number;
+  timerStartedAt: string | null;
+  recurrence: string | null;
+  parentTaskId: string | null;
+  subtaskCount: number;
+  subtaskDone: number;
 }
 
 function toPlannerTask(t: {
@@ -238,8 +245,13 @@ function toPlannerTask(t: {
   projectId: string | null;
   responsibleId: string | null;
   color?: string | null;
+  recurrence?: string | null;
+  parentTaskId?: string | null;
+  trackedSeconds?: number;
+  timerStartedAt?: Date | null;
   domain?: { name: string; color: string } | null;
   project?: { title: string; goalId?: string | null } | null;
+  subtasks?: { status: string }[];
 }): PlannerTask {
   const score = scoreTask({
     status: t.status,
@@ -251,6 +263,7 @@ function toPlannerTask(t: {
     projectId: t.projectId,
     project: t.project ? { goalId: t.project.goalId ?? null } : null,
   }).score;
+  const subtasks = t.subtasks ?? [];
   return {
     id: t.id,
     title: t.title,
@@ -270,6 +283,12 @@ function toPlannerTask(t: {
     projectId: t.projectId,
     responsibleId: t.responsibleId,
     score,
+    trackedSeconds: t.trackedSeconds ?? 0,
+    timerStartedAt: t.timerStartedAt ? t.timerStartedAt.toISOString() : null,
+    recurrence: t.recurrence ?? null,
+    parentTaskId: t.parentTaskId ?? null,
+    subtaskCount: subtasks.length,
+    subtaskDone: subtasks.filter((s) => s.status === "completed").length,
   };
 }
 
@@ -282,11 +301,11 @@ export async function getPlanner(rangeStart: Date, rangeEnd: Date) {
 
   const [planned, waitingRaw, members, profile] = await Promise.all([
     prisma.task.findMany({
-      where: { userId, plannedDate: { gte: rangeStart, lt: rangeEnd } },
+      where: { userId, plannedDate: { gte: rangeStart, lt: rangeEnd }, parentTaskId: null },
       include,
     }),
     prisma.task.findMany({
-      where: { userId, plannedDate: null, status: { not: "completed" } },
+      where: { userId, plannedDate: null, status: { not: "completed" }, parentTaskId: null },
       include,
     }),
     prisma.member.findMany({ where: { userId }, orderBy: [{ order: "asc" }] }),
@@ -306,7 +325,7 @@ export async function getHomeData() {
   const now = new Date();
   const { addDays, isSameDay, startOfWeek, ymd } = await import("./dates");
 
-  const [tasks, goals, projectsRaw, domains, profile, reviews] = await Promise.all([
+  const [tasks, goals, projectsRaw, domains, profile, reviews, userRow] = await Promise.all([
     prisma.task.findMany({
       where: { userId },
       include: { domain: { select: { name: true, color: true } }, project: { select: { title: true, goalId: true } } },
@@ -316,6 +335,7 @@ export async function getHomeData() {
     prisma.domain.findMany({ where: { userId }, orderBy: { order: "asc" } }),
     getProfile(),
     prisma.review.findMany({ where: { userId }, orderBy: { createdAt: "asc" }, take: 14 }),
+    prisma.user.findUnique({ where: { id: userId }, select: { todayIntention: true, intentionDate: true } }),
   ]);
 
   const dash = buildDashboard(
@@ -384,14 +404,23 @@ export async function getHomeData() {
 
   const completedThisWeek = tasks.filter((t) => t.completedAt && new Date(t.completedAt) >= weekStart).length;
 
-  return { name: profile.name, dash, activityToday, totalTodayHours, milestones, streak, weekStrip, energyTrend, latestEnergy, heat, heatMax, hours, completedThisWeek };
+  // Today's intention
+  const todayStr = ymd(now);
+  const intentionIsToday = userRow?.intentionDate ? ymd(new Date(userRow.intentionDate)) === todayStr : false;
+  const todayIntention = intentionIsToday ? (userRow?.todayIntention ?? null) : null;
+
+  return { name: profile.name, dash, activityToday, totalTodayHours, milestones, streak, weekStrip, energyTrend, latestEnergy, heat, heatMax, hours, completedThisWeek, todayIntention };
 }
 
 export async function getTasksBoard() {
   const userId = await getCurrentUserId();
   const tasks = await prisma.task.findMany({
-    where: { userId },
-    include: { domain: { select: { name: true, color: true } }, project: { select: { title: true, goalId: true } } },
+    where: { userId, parentTaskId: null },
+    include: {
+      domain: { select: { name: true, color: true } },
+      project: { select: { title: true, goalId: true } },
+      subtasks: { select: { status: true } },
+    },
     orderBy: { createdAt: "desc" },
   });
   return tasks.map(toPlannerTask);

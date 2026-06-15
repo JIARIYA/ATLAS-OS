@@ -81,23 +81,37 @@ export function MilestonesWidget({ items }: { items: { id: string; title: string
   );
 }
 
+/** @deprecated use WeekHeatmap */
 export function StreakCard({ streak, weekStrip }: { streak: number; weekStrip: { label: string; done: boolean; isToday: boolean }[] }) {
+  return <WeekHeatmap weekStrip={weekStrip} completedThisWeek={streak} />;
+}
+
+export function WeekHeatmap({ weekStrip, completedThisWeek }: { weekStrip: { label: string; done: boolean; isToday: boolean }[]; completedThisWeek: number }) {
+  const allEmpty = weekStrip.every((d) => !d.done);
   return (
-    <Widget title="Streaks" icon={Flame} className="col-span-6 md:col-span-3">
-      <div className="flex items-baseline gap-1.5">
-        <span className="text-3xl font-bold tabular-nums text-ink">{streak}</span>
-        <span className="text-xs text-faint">day{streak === 1 ? "" : "s"}</span>
+    <Widget title="This week" icon={Flame} className="col-span-6 md:col-span-3">
+      <div className="text-xs text-muted mb-3">
+        <span className="text-base font-bold text-ink tabular-nums">{completedThisWeek}</span>
+        {" "}tasks completed
       </div>
-      <div className="mt-1 text-[11px] text-faint">Current completion streak</div>
-      <div className="mt-3 flex justify-between">
+      <div className="flex justify-between">
         {weekStrip.map((d, i) => (
           <div key={i} className="flex flex-col items-center gap-1">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold" style={{ background: d.done ? "var(--ok)" : "var(--surface-2)", color: d.done ? "#fff" : "var(--faint)", outline: d.isToday ? "2px solid var(--accent)" : "none", outlineOffset: 1 }}>
+            <div className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors"
+              style={{
+                background: d.done ? "var(--accent)" : "var(--surface2)",
+                color: d.done ? "#fff" : "var(--faint)",
+                outline: d.isToday ? "2px solid var(--accent)" : "none",
+                outlineOffset: "2px",
+              }}>
               {d.done ? "✓" : ""}
-            </span>
+            </div>
             <span className="text-[10px] text-faint">{d.label}</span>
           </div>
         ))}
+      </div>
+      <div className="mt-2 text-[11px] text-faint">
+        {allEmpty ? "Start today" : "Keep it going →"}
       </div>
     </Widget>
   );

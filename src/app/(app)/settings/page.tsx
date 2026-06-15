@@ -1,6 +1,7 @@
 import { AlertTriangle, Clock, Flag, Gauge, Lightbulb, TrendingUp } from "lucide-react";
 import { updateProfile } from "@/app/actions";
 import { Badge, PageHeader, ProgressBar, SectionTitle, StatPill } from "@/components/ui";
+import { WorkdayPicker } from "@/components/WorkdayPicker";
 import { getCapacityData } from "@/lib/queries";
 import type { CapacityWindow } from "@/lib/capacity";
 import type { Severity } from "@/lib/recommendation";
@@ -130,8 +131,7 @@ export default async function CapacityPage() {
             <input name="name" defaultValue={data.profile.name} className="input" />
           </div>
           <div>
-            <label className="label">Workdays (Mon=1 … Sun=7)</label>
-            <input name="workdays" defaultValue={data.profile.workdays} className="input" placeholder="1,2,3,4,5" />
+            <WorkdayPicker defaultValue={data.profile.workdays} />
           </div>
           <div>
             <label className="label">Deep-work hours / day</label>

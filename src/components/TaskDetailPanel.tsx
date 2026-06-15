@@ -2,13 +2,16 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, File as FileIcon, Folder, Paperclip, Tag, Trash2, Upload, User, X } from "lucide-react";
+import { CalendarDays, CheckSquare, File as FileIcon, Folder, Paperclip, Plus, Tag, Trash2, Upload, User, X } from "lucide-react";
 import {
+  createSubtask,
   deleteAttachment,
+  deleteSubtask,
   deleteTask,
   getTaskAttachments,
   setTaskResponsible,
   setTaskStatus,
+  toggleSubtask,
   unplanTask,
   updateTaskDetails,
   uploadAttachments,
@@ -258,6 +261,9 @@ export function TaskDetailPanel({
             </div>
           </div>
 
+          {/* Subtasks */}
+          <SubtasksSection taskId={task.id} />
+
           {/* Planner status */}
           <div className="mt-6 rounded-xl border p-3 text-xs text-muted">
             <div className="flex items-center justify-between">
@@ -295,6 +301,79 @@ export function TaskDetailPanel({
         </div>
       </aside>
     </>
+  );
+}
+
+function SubtasksSection({ taskId }: { taskId: string }) {
+  const router = useRouter();
+  const [, start] = useTransition();
+  const [subtasks, setSubtasks] = useState<{ id: string; title: string; status: string }[]>([]);
+  const [newTitle, setNewTitle] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/tasks/${taskId}/subtasks`).then((r) => r.json()).then((d) => { if (active) setSubtasks(d); });
+    return () => { active = false; };
+  }, [taskId]);
+
+  function refresh() {
+    fetch(`/api/tasks/${taskId}/subtasks`).then((r) => r.json()).then(setSubtasks);
+  }
+
+  function add() {
+    const t = newTitle.trim();
+    if (!t) return;
+    setNewTitle("");
+    start(async () => { await createSubtask(taskId, t); refresh(); router.refresh(); });
+  }
+
+  function toggle(id: string, done: boolean) {
+    setSubtasks((prev) => prev.map((s) => s.id === id ? { ...s, status: done ? "completed" : "new" } : s));
+    start(async () => { await toggleSubtask(id, done); router.refresh(); });
+  }
+
+  function remove(id: string) {
+    setSubtasks((prev) => prev.filter((s) => s.id !== id));
+    start(async () => { await deleteSubtask(id); router.refresh(); });
+  }
+
+  const done = subtasks.filter((s) => s.status === "completed").length;
+
+  return (
+    <div className="mt-6">
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-faint">
+        <CheckSquare size={13} />
+        Subtasks {subtasks.length > 0 && <span className="font-normal text-muted">{done}/{subtasks.length}</span>}
+      </div>
+      <div className="space-y-0.5">
+        {subtasks.map((s) => (
+          <div key={s.id} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface2">
+            <input
+              type="checkbox"
+              checked={s.status === "completed"}
+              onChange={(e) => toggle(s.id, e.target.checked)}
+              className="h-3.5 w-3.5 rounded border accent-[var(--accent)]"
+            />
+            <span className="flex-1 text-sm" style={{ textDecoration: s.status === "completed" ? "line-through" : "none", color: s.status === "completed" ? "var(--faint)" : "var(--ink)" }}>
+              {s.title}
+            </span>
+            <button onClick={() => remove(s.id)} className="hidden rounded p-0.5 text-faint hover:text-danger group-hover:block"><Trash2 size={12} /></button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-1.5 flex gap-2">
+        <input
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder="Add subtask…"
+          className="input flex-1 py-1.5 text-xs"
+        />
+        <button onClick={add} disabled={!newTitle.trim()} className="btn py-1.5 text-xs disabled:opacity-40">
+          <Plus size={13} />
+        </button>
+      </div>
+    </div>
   );
 }
 
