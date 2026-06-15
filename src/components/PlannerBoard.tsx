@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -74,6 +74,8 @@ export function PlannerBoard(props: Props) {
   const [selected, setSelected] = useState<PlannerTask | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const calRef = useRef<HTMLDivElement>(null);
+  const scrollCooldown = useRef(false);
 
   const anchor = new Date(anchorISO);
   const renderStart = new Date(renderStartISO);
@@ -106,6 +108,20 @@ export function PlannerBoard(props: Props) {
 
   // Always leave focus mode when unmounting (navigating away).
   useEffect(() => () => document.documentElement.classList.remove("planner-focus"), []);
+
+  // Scroll up/down to navigate between periods.
+  useEffect(() => {
+    const el = calRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (scrollCooldown.current) return;
+      scrollCooldown.current = true;
+      setTimeout(() => { scrollCooldown.current = false; }, 600);
+      router.push(href(view, e.deltaY > 0 ? nextDate : prevDate));
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [view, prevDate, nextDate, router]);
 
   function tasksFor(rowId: string | null, day: Date): PlannerTask[] {
     return planned
@@ -192,7 +208,7 @@ export function PlannerBoard(props: Props) {
 
       <div className="flex min-h-0 flex-1 gap-4">
         {/* Main calendar */}
-        <div className="card flex min-w-0 flex-1 flex-col overflow-hidden p-0">
+        <div ref={calRef} className="card flex min-w-0 flex-1 flex-col overflow-hidden p-0">
           {view === "month" ? (
             <MonthGrid
               cells={dayList}
